@@ -1,0 +1,42 @@
+{% extends "layout.html" %}
+{% block content %}    
+    <div class="container">
+        <h1>Upload and Analyse</h1>
+        <form action="/analyse" method="post" enctype="multipart/form-data">
+            <input type="file" name="file">
+            <input type="submit" value="Upload">
+        </form>
+
+        <!-- Display the uploaded file's content in a smaller scrollable window -->
+        <div class="table-container mt-3">
+            {% if table %}
+                {{ table|safe }}
+            {% else %}
+                <!-- Placeholder for table -->
+                <p>No data to display yet.</p>
+            {% endif %}
+        </div>
+
+        <!-- Display the scatter plot -->
+        <div class="plot-container mt-3">
+            {% if plot_encoded %}
+                <h3>Scatter Plot</h3>
+                {{ plot_encoded|safe }}
+            {% else %}
+                <!-- Placeholder for plot -->
+                <p>No plot available yet.</p>
+            {% endif %}
+        </div>
+
+        <!-- Display the Sweetviz report -->
+        <div class="profile-container mt-3">
+            {% if profile %}
+                <h3>Sweetviz Report</h3>
+                {{ profile|safe }}
+            {% else %}
+                <!-- Placeholder for profile -->
+                <p>No profile available yet.</p>
+            {% endif %}
+        </div>
+    </div>
+{% endblock content %}
