@@ -1,0 +1,17 @@
+{% extends "layout.html"%}
+{% block content %}
+    <h2>Linear Model (Logistic Regression)</h2>
+    <img src="{{ url_for('static', filename=plot) }}" alt="Decision Boundary Plot">
+    
+    <h3>Accuracy: {{ lr_accuracy }}</h3>
+    <h3>Classification Report:</h3>
+    <pre>{{ lr_report }}</pre>
+
+    <h2>Non-Linear Model (SVM with RBF Kernel)</h2>
+    <img src="{{ url_for('static', filename=plot2) }}" alt="Decision Boundary Plot">
+    
+    <h3>Accuracy: {{ svm_accuracy }}</h3>
+    <h3>Classification Report:</h3>
+    <pre>{{ svm_report }}</pre>
+
+{% endblock content %}

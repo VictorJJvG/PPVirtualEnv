@@ -1,118 +1,182 @@
-from flask import Flask, render_template, request
-import sweetviz as sv
-import pandas as pd
+import matplotlib
+matplotlib.use('Agg')
+
+from flask import Flask, render_template, request, redirect, url_for, flash
 import os
-from werkzeug.utils import secure_filename
+import pandas as pd
 import matplotlib.pyplot as plt
-from io import BytesIO
-import base64
+import numpy as np
+from pandas_profiling import ProfileReport
+from sklearn.linear_model import LogisticRegression
+from sklearn.svm import SVC
+from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score, classification_report
+from matplotlib.colors import ListedColormap
+
+import shutil
+import atexit
 
 app = Flask(__name__)
+app.secret_key = "secret"  # Change this to your desired secret key
+UPLOAD_FOLDER = 'uploads'
+STATIC_FOLDER = 'static'
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+app.config['STATIC_FOLDER'] = STATIC_FOLDER
 
-@app.route("/")
-@app.route("/home")
-def home():
-    return render_template('home.html')
+ALLOWED_EXTENSIONS = {'xlsx', 'xls'}
 
-def profile_csv(df):
-    try:
-        # Make column names lowercase to handle case sensitivity
-        df.columns = map(str.lower, df.columns)
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
-        # Generate Sweetviz profile report
-        report = sv.analyze(df)
-
-        # Save the report to HTML
-        report_html_path = 'report.html'
-        report.show_html(filepath=report_html_path, open_browser=False)
-
-        # Read the saved HTML report
-        with open(report_html_path, 'r') as file:
-            html_profile = file.read()
-
-        return html_profile
-
-    except Exception as e:
-        return f"Error profiling data: {e}"
-
-def plot_scatter(df):
-    # Create a scatter plot using matplotlib
-    fig, ax = plt.subplots()
-
-    # Convert the index to a list before performing boolean indexing
-    index_list = df.index.tolist()
-
-    # Plot points where the third column is 1
-    ax.scatter(df.iloc[[i for i in index_list if df.iloc[i, 2] == 1], 0], 
-               df.iloc[[i for i in index_list if df.iloc[i, 2] == 1], 1], 
-               marker='o', color='b', label='Value 1')
-
-    # Plot points where the third column is 0
-    ax.scatter(df.iloc[[i for i in index_list if df.iloc[i, 2] == 0], 0], 
-               df.iloc[[i for i in index_list if df.iloc[i, 2] == 0], 1], 
-               marker='x', color='r', label='Value 0')
-
-    ax.set_title(df.columns[2])
-    ax.set_xlabel(df.columns[0])
-    ax.set_ylabel(df.columns[1])
-    ax.legend()
-
-    # Save the plot to a BytesIO object
-    image_stream = BytesIO()
-    plt.savefig(image_stream, format='png')
-    image_stream.seek(0)
-
-    # Encode the image to base64 for embedding in HTML
-    plot_encoded = base64.b64encode(image_stream.read()).decode('utf-8')
-    plt.close()
-
-    return f'<img src="data:image/png;base64,{plot_encoded}">'
-
-@app.route('/analyse', methods=['GET', 'POST'])
-def analyse():
-    html_table = ''  # Initialize variable to hold HTML table content
-    html_profile = ''  # Initialize variable to hold HTML profile report content
-    plot_encoded = ''  # Initialize variable to hold base64-encoded plot
-
-    if request.method == 'POST':
-        uploaded_file = request.files['file']
-        if uploaded_file.filename != '':
-            try:
-                # Save the uploaded file to the 'uploads' folder
-                filename = secure_filename(uploaded_file.filename)
-                save_path = 'uploads/' + filename
-                uploaded_file.save(save_path)
-
-                # Read the uploaded CSV file for rendering the DataFrame as an HTML table
-                df = pd.read_csv(save_path, dtype=float, sep=';', decimal=',', encoding='utf-8')
-                html_table = df.head(100).to_html(classes='table table-striped')
-
-                # Generate and encode the scatter plot
-                plot_encoded = plot_scatter(df)
-
-                # Profile the uploaded CSV file
-                html_profile = profile_csv(df)
-
-            except Exception as e:
-                return f"Error processing file: {e}"
-
-    return render_template('analyse.html', table=html_table, profile=html_profile, plot_encoded=plot_encoded)
-
-# Define a function to perform file cleanup
-def cleanup_uploaded_files(exception=None):
-    uploads_folder = 'uploads'
-    for filename in os.listdir(uploads_folder):
-        file_path = os.path.join(uploads_folder, filename)
+def cleanup_uploads_folder():
+    # Clean up the uploads folder
+    upload_folder = app.config['UPLOAD_FOLDER']
+    for filename in os.listdir(upload_folder):
+        file_path = os.path.join(upload_folder, filename)
         try:
             if os.path.isfile(file_path):
-                os.unlink(file_path)  # Delete the file
+                os.unlink(file_path)
+            elif os.path.isdir(file_path):
+                shutil.rmtree(file_path)
         except Exception as e:
-            print(f"Failed to delete {file_path}: {e}")
+            print(f"Error cleaning up file or directory: {file_path} - {e}")
 
-# Register the cleanup function to run when the app context is torn down
-@app.teardown_appcontext
-def teardown_appcontext(exception=None):
-    cleanup_uploaded_files(exception)
+def cleanup_static_folder(exception=None):
+    # Clean up the static folder, excluding main.css
+    static_folder = app.config['STATIC_FOLDER']
+    for filename in os.listdir(static_folder):
+        if filename != 'main.css':  # Exclude main.css
+            file_path = os.path.join(static_folder, filename)
+            try:
+                if os.path.isfile(file_path):
+                    os.unlink(file_path)
+                elif os.path.isdir(file_path):
+                    shutil.rmtree(file_path)
+            except Exception as e:
+                print(f"Error cleaning up file or directory: {file_path} - {e}")
+
+# Register a function to be called when the application context is torn down
+def cleanup_folders(exception=None):
+    cleanup_uploads_folder()
+    cleanup_static_folder()
+
+# Register a function to be called when the Python interpreter exits
+atexit.register(cleanup_folders)
+
+@app.route('/')
+def index():
+    return render_template('home.html')
+
+@app.route('/upload', methods=['POST'])
+def upload_file():
+    if request.method == 'POST':
+        # Check if the post request has the file part
+        if 'file' not in request.files:
+            flash('No file part')
+            return redirect(request.url)
+        file = request.files['file']
+        # If the user does not select a file, the browser submits an empty file without a filename
+        if file.filename == '':
+            flash('No selected file')
+            return redirect(request.url)
+        if file and allowed_file(file.filename):
+            filename = file.filename
+            file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+            flash('File successfully uploaded')
+            return redirect(url_for('analyze', filename=filename))
+        else:
+            flash('Allowed file types are xlsx, xls')
+            return redirect(request.url)
+
+@app.route('/analyze/<filename>')
+def analyze(filename):
+    filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+    df = pd.read_excel(filepath)
+
+    # Plotting scatter plot
+    plt.figure(figsize=(10, 6))
+    colors = {0: 'orange', 1: 'blue'}
+    plt.scatter(df.iloc[:, 0], df.iloc[:, 1], c=df.iloc[:, 2].map(colors))
+    plt.xlabel(df.columns[0])
+    plt.ylabel(df.columns[1])
+    plt.title('Scatter Plot')
+    plt.legend()
+    plot_filename = f'plot_{filename.split(".")[0]}.png'
+    plot_filepath = os.path.join('static', plot_filename)
+    plt.savefig(plot_filepath)
+    plt.close()
+
+    # Data Profiling
+    profile = ProfileReport(df)
+    profile_filename = f'profile_{filename.split(".")[0]}.html'
+    profile_filepath = os.path.join('static', profile_filename)
+    profile.to_file(profile_filepath)
+
+    return render_template('analyse.html', plot=plot_filename, profile=profile_filename, filename=filename)
+
+@app.route('/train/<filename>')
+def train_model(filename):
+    filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+    df = pd.read_excel(filepath)
+
+    X = df.iloc[:, :-1]
+    y = df.iloc[:, -1]
+
+    # Train-test split
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+    # Feature scaling
+    scaler = StandardScaler()
+    X_train_scaled = scaler.fit_transform(X_train)
+    X_test_scaled = scaler.transform(X_test)
+
+    # Train logistic regression model
+    lr_model = LogisticRegression()
+    lr_model.fit(X_train_scaled, y_train)
+
+    # Train SVM with RBF kernel
+    svm_model = SVC(kernel='rbf', gamma='scale')
+    svm_model.fit(X_train_scaled, y_train)
+
+    # Evaluate models
+    lr_pred = lr_model.predict(X_test_scaled)
+    lr_accuracy = accuracy_score(y_test, lr_pred)
+    lr_report = classification_report(y_test, lr_pred)
+
+    svm_pred = svm_model.predict(X_test_scaled)
+    svm_accuracy = accuracy_score(y_test, svm_pred)
+    svm_report = classification_report(y_test, svm_pred)
+    
+    def plot_decision_boundary(model, X, y, filename):
+        plt.figure(figsize=(10, 6))
+        cmap_light = ListedColormap(['orange', 'blue'])
+        h = .02
+        x_min, x_max = X.iloc[:, 0].min() - 1, X.iloc[:, 0].max() + 1
+        y_min, y_max = X.iloc[:, 1].min() - 1, X.iloc[:, 1].max() + 1
+        xx, yy = np.meshgrid(np.arange(x_min, x_max, h), np.arange(y_min, y_max, h))
+        Z = model.predict(scaler.transform(np.c_[xx.ravel(), yy.ravel()]))
+        Z = Z.reshape(xx.shape)
+        plt.contourf(xx, yy, Z, cmap=cmap_light)
+        colors = {0: 'orange', 1: 'blue'}
+        plt.scatter(X.iloc[:, 0], X.iloc[:, 1], c=y.map(colors), cmap=ListedColormap(['orange', 'blue']), edgecolors='k')
+        plt.xlabel(df.columns[0])
+        plt.ylabel(df.columns[1])
+        plt.title('Decision Boundary')
+
+        plot_filename = f'plot_{filename}'
+        plot_filepath = os.path.join('static', plot_filename)
+        plt.savefig(plot_filepath)
+        plt.close()
+        return plot_filename
+
+    # Plot lr decision boundary
+    lr_plot_filename = plot_decision_boundary(lr_model, X, y, f'lr_boundary_{filename.split(".")[0]}.png')
+
+    # Plot svm decision boundary
+    svm_plot_filename = plot_decision_boundary(svm_model, X, y, f'svm_boundary_{filename.split(".")[0]}.png')
+
+    return render_template('predict.html', plot=lr_plot_filename, plot2=svm_plot_filename, lr_accuracy=lr_accuracy, svm_accuracy=svm_accuracy, lr_report=lr_report, svm_report=svm_report)
 
 if __name__ == '__main__':
     app.run(debug=True)

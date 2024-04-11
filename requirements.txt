@@ -1,5 +1,8 @@
 flask
 pandas
 setuptools
-sweetviz
 matplotlib
+numpy
+openpyxl
+scikit-learn
+ydata_profiling

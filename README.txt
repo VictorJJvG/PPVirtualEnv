@@ -9,3 +9,7 @@ An example excel file is included in this repository within the uploads folder.
 
 In order to set up the programme, all libraries in the requirements.txt need to be installed.
 You may want to use 'pip install -r requirements.txt' to install the dependencies.
+
+1) (optional) setup a virtual environment (and activate it)
+2) install dependencies with 'pip install -r requirements.txt'
+3) Run the app with 'python app.py'
