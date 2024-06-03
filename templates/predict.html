@@ -14,4 +14,19 @@
     <h3>Classification Report:</h3>
     <pre>{{ svm_report }}</pre>
 
+    <h2>Predict New Data Point</h2>
+    <form action="{{ url_for('train_model', filename=filename) }}" method="post">
+        <label for="x_coord">X Coordinate:</label>
+        <input type="text" id="x_coord" name="x_coord" required>
+        <label for="y_coord">Y Coordinate:</label>
+        <input type="text" id="y_coord" name="y_coord" required>
+        <input type="submit" value="Predict">
+    </form>
+
+    {% if prediction %}
+        <h3>Predictions for Coordinates ({{ x_coord }}, {{ y_coord }}):</h3>
+        <p>Logistic Regression Prediction: {{ lr_prediction }}</p>
+        <p>SVM Prediction: {{ svm_prediction }}</p>
+    {% endif %}
+
 {% endblock content %}

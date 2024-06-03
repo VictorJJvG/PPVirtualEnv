@@ -100,7 +100,7 @@ def analyze(filename):
     plt.scatter(df.iloc[:, 0], df.iloc[:, 1], c=df.iloc[:, 2].map(colors))
     plt.xlabel(df.columns[0])
     plt.ylabel(df.columns[1])
-    plt.title('Scatter Plot')
+    plt.title('Scatter Plot showing different '+ df.columns[2])
     plt.legend()
     plot_filename = f'plot_{filename.split(".")[0]}.png'
     plot_filepath = os.path.join('static', plot_filename)
@@ -115,7 +115,7 @@ def analyze(filename):
 
     return render_template('analyse.html', plot=plot_filename, profile=profile_filename, filename=filename)
 
-@app.route('/train/<filename>')
+@app.route('/train/<filename>', methods=['GET', 'POST'])
 def train_model(filename):
     filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
     df = pd.read_excel(filepath)
@@ -148,7 +148,7 @@ def train_model(filename):
     svm_accuracy = accuracy_score(y_test, svm_pred)
     svm_report = classification_report(y_test, svm_pred)
     
-    def plot_decision_boundary(model, X, y, filename):
+    def plot_decision_boundary(model, X, y, filename, x_coord=None, y_coord=None):
         plt.figure(figsize=(10, 6))
         cmap_light = ListedColormap(['orange', 'blue'])
         h = .02
@@ -160,6 +160,8 @@ def train_model(filename):
         plt.contourf(xx, yy, Z, cmap=cmap_light)
         colors = {0: 'orange', 1: 'blue'}
         plt.scatter(X.iloc[:, 0], X.iloc[:, 1], c=y.map(colors), cmap=ListedColormap(['orange', 'blue']), edgecolors='k')
+        if x_coord is not None and y_coord is not None:
+            plt.scatter([x_coord], [y_coord], c='red', s=100, edgecolors='k')
         plt.xlabel(df.columns[0])
         plt.ylabel(df.columns[1])
         plt.title('Decision Boundary')
@@ -170,13 +172,27 @@ def train_model(filename):
         plt.close()
         return plot_filename
 
+    x_coord = None
+    y_coord = None
+    lr_prediction = None
+    svm_prediction = None
+    prediction = False
+
+    if request.method == 'POST':
+        x_coord = float(request.form['x_coord'])
+        y_coord = float(request.form['y_coord'])
+        new_data = scaler.transform([[x_coord, y_coord]])
+        lr_prediction = lr_model.predict(new_data)[0]
+        svm_prediction = svm_model.predict(new_data)[0]
+        prediction = True
+
     # Plot lr decision boundary
-    lr_plot_filename = plot_decision_boundary(lr_model, X, y, f'lr_boundary_{filename.split(".")[0]}.png')
+    lr_plot_filename = plot_decision_boundary(lr_model, X, y, f'lr_boundary_{filename.split(".")[0]}.png', x_coord, y_coord)
 
     # Plot svm decision boundary
-    svm_plot_filename = plot_decision_boundary(svm_model, X, y, f'svm_boundary_{filename.split(".")[0]}.png')
+    svm_plot_filename = plot_decision_boundary(svm_model, X, y, f'svm_boundary_{filename.split(".")[0]}.png', x_coord, y_coord)
 
-    return render_template('predict.html', plot=lr_plot_filename, plot2=svm_plot_filename, lr_accuracy=lr_accuracy, svm_accuracy=svm_accuracy, lr_report=lr_report, svm_report=svm_report)
+    return render_template('predict.html', plot=lr_plot_filename, plot2=svm_plot_filename, lr_accuracy=lr_accuracy, svm_accuracy=svm_accuracy, lr_report=lr_report, svm_report=svm_report, filename=filename, prediction=prediction, x_coord=x_coord, y_coord=y_coord, lr_prediction=lr_prediction, svm_prediction=svm_prediction)
 
 if __name__ == '__main__':
     app.run(debug=True)
